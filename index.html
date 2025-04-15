@@ -235,6 +235,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             const canvas = document.getElementById('canvas');
             const resetBtn = document.getElementById('reset-btn');
+            const imageItems = document.querySelectorAll('.image-item');
             let currentZIndex = 1;
             let activeElement = null;
             let currentX;
@@ -243,20 +244,119 @@
             let initialY;
             let xOffset = 0;
             let yOffset = 0;
+            let isDragging = false;
 
-            // Configurar Drag and Drop para las imágenes originales
-            const imageItems = document.querySelectorAll('.image-item');
-            
+            // Agregar eventos táctiles a las imágenes originales
             imageItems.forEach(img => {
+                // Para navegadores de escritorio
                 img.addEventListener('dragstart', dragStart);
+                
+                // Para dispositivos táctiles
+                img.addEventListener('touchstart', imgTouchStart, { passive: false });
+                img.addEventListener('touchend', imgTouchEnd, { passive: false });
+                img.addEventListener('touchmove', imgTouchMove, { passive: false });
             });
 
+            // Eventos para PC
             canvas.addEventListener('dragover', dragOver);
             canvas.addEventListener('drop', drop);
 
             // Event listeners para reiniciar
             resetBtn.addEventListener('click', resetCanvas);
 
+            // Variables para almacenar la imagen que se está arrastrando en movil
+            let touchDragImage = null;
+            let touchDragImageId = null;
+
+            // Función para arrastrar imágenes desde el panel en dispositivos táctiles
+            function imgTouchStart(e) {
+                e.preventDefault();
+                touchDragImageId = this.dataset.id;
+                isDragging = true;
+                
+                // Guarda la posición inicial
+                if (e.touches && e.touches[0]) {
+                    initialX = e.touches[0].clientX;
+                    initialY = e.touches[0].clientY;
+                }
+            }
+
+            function imgTouchMove(e) {
+                if (!isDragging) return;
+                e.preventDefault();
+                
+                // Si todavía no se ha creado la imagen clonada, créala
+                if (!touchDragImage && e.touches && e.touches[0]) {
+                    const touch = e.touches[0];
+                    // Verificamos si el movimiento es significativo (para evitar clics accidentales)
+                    const movedX = Math.abs(touch.clientX - initialX);
+                    const movedY = Math.abs(touch.clientY - initialY);
+                    
+                    if (movedX > 10 || movedY > 10) {
+                        // Crear imagen clonada que sigue al dedo
+                        touchDragImage = document.createElement('img');
+                        touchDragImage.src = this.src;
+                        touchDragImage.alt = this.alt;
+                        touchDragImage.classList.add('draggable-image');
+                        touchDragImage.style.position = 'fixed';  // Posición absoluta en la ventana
+                        touchDragImage.style.opacity = '0.8';
+                        touchDragImage.style.zIndex = '9999';
+                        touchDragImage.style.pointerEvents = 'none';
+                        document.body.appendChild(touchDragImage);
+                    }
+                }
+                
+                // Mueve la imagen con el dedo
+                if (touchDragImage && e.touches && e.touches[0]) {
+                    const touch = e.touches[0];
+                    touchDragImage.style.left = (touch.clientX - 30) + 'px';
+                    touchDragImage.style.top = (touch.clientY - 30) + 'px';
+                }
+            }
+
+            function imgTouchEnd(e) {
+                if (!isDragging) return;
+                e.preventDefault();
+                isDragging = false;
+                
+                if (touchDragImage) {
+                    // Obtener la posición final del toque
+                    const lastTouch = e.changedTouches[0];
+                    const lastX = lastTouch.clientX;
+                    const lastY = lastTouch.clientY;
+                    
+                    // Eliminar la imagen temporal
+                    document.body.removeChild(touchDragImage);
+                    touchDragImage = null;
+                    
+                    // Verificar si el toque terminal está dentro del canvas
+                    const canvasRect = canvas.getBoundingClientRect();
+                    if (lastX >= canvasRect.left && lastX <= canvasRect.right &&
+                        lastY >= canvasRect.top && lastY <= canvasRect.bottom) {
+                        
+                        // Crear la imagen en el canvas en la posición del toque
+                        const originalImage = document.querySelector(`.image-item[data-id="${touchDragImageId}"]`);
+                        if (originalImage) {
+                            const newImage = document.createElement('img');
+                            newImage.src = originalImage.src;
+                            newImage.alt = originalImage.alt;
+                            newImage.classList.add('draggable-image');
+                            newImage.style.left = (lastX - canvasRect.left - 30) + 'px';
+                            newImage.style.top = (lastY - canvasRect.top - 30) + 'px';
+                            newImage.style.zIndex = currentZIndex++;
+                            
+                            // Agregar eventos táctiles
+                            newImage.addEventListener('touchstart', touchStart, { passive: false });
+                            newImage.addEventListener('mousedown', dragMouseDown);
+                            canvas.appendChild(newImage);
+                        }
+                    }
+                }
+                
+                touchDragImageId = null;
+            }
+
+            // Funciones para PC
             function dragStart(e) {
                 e.dataTransfer.setData('text/plain', e.target.dataset.id);
                 e.dataTransfer.effectAllowed = 'copy';
@@ -289,6 +389,7 @@
                 }
             }
 
+            // Para mover imágenes ya colocadas en el canvas con el ratón
             function dragMouseDown(e) {
                 e.preventDefault();
                 activeElement = e.target;
@@ -296,13 +397,14 @@
                 // Traer al frente la imagen seleccionada
                 activeElement.style.zIndex = currentZIndex++;
                 
-                initialX = e.clientX - xOffset;
-                initialY = e.clientY - yOffset;
+                initialX = e.clientX;
+                initialY = e.clientY;
                 
                 document.addEventListener('mousemove', elementDrag);
                 document.addEventListener('mouseup', closeDragElement);
             }
 
+            // Para mover imágenes ya colocadas en el canvas con toque
             function touchStart(e) {
                 e.preventDefault();
                 activeElement = e.target;
@@ -311,82 +413,92 @@
                 activeElement.style.zIndex = currentZIndex++;
                 
                 if (e.touches && e.touches[0]) {
-                    initialX = e.touches[0].clientX - xOffset;
-                    initialY = e.touches[0].clientY - yOffset;
+                    initialX = e.touches[0].clientX;
+                    initialY = e.touches[0].clientY;
                 }
                 
                 document.addEventListener('touchmove', touchMove, { passive: false });
-                document.addEventListener('touchend', closeTouchDrag);
+                document.addEventListener('touchend', closeTouchDrag, { passive: false });
             }
 
+            // Mover con ratón
             function elementDrag(e) {
                 e.preventDefault();
                 
                 if (activeElement) {
-                    currentX = e.clientX - initialX;
-                    currentY = e.clientY - initialY;
+                    // Calcular nueva posición
+                    const dx = e.clientX - initialX;
+                    const dy = e.clientY - initialY;
+                    initialX = e.clientX;
+                    initialY = e.clientY;
                     
-                    xOffset = currentX;
-                    yOffset = currentY;
+                    // Obtener la posición actual
+                    let currentLeft = parseInt(activeElement.style.left) || 0;
+                    let currentTop = parseInt(activeElement.style.top) || 0;
                     
-                    // Limitar movimiento dentro del canvas
+                    // Actualizar posición
+                    let newLeft = currentLeft + dx;
+                    let newTop = currentTop + dy;
+                    
+                    // Limitar al canvas
                     const rect = canvas.getBoundingClientRect();
                     const imageRect = activeElement.getBoundingClientRect();
                     
-                    let left = e.clientX - rect.left - (imageRect.width / 2);
-                    let top = e.clientY - rect.top - (imageRect.height / 2);
+                    newLeft = Math.max(0, Math.min(newLeft, rect.width - imageRect.width));
+                    newTop = Math.max(0, Math.min(newTop, rect.height - imageRect.height));
                     
-                    // Asegurar que la imagen no salga del canvas
-                    left = Math.max(0, Math.min(left, rect.width - imageRect.width));
-                    top = Math.max(0, Math.min(top, rect.height - imageRect.height));
-                    
-                    activeElement.style.left = `${left}px`;
-                    activeElement.style.top = `${top}px`;
+                    activeElement.style.left = `${newLeft}px`;
+                    activeElement.style.top = `${newTop}px`;
                 }
             }
 
+            // Mover con toque
             function touchMove(e) {
                 e.preventDefault();
                 
                 if (activeElement && e.touches && e.touches[0]) {
-                    currentX = e.touches[0].clientX - initialX;
-                    currentY = e.touches[0].clientY - initialY;
+                    // Calcular nueva posición
+                    const touch = e.touches[0];
+                    const dx = touch.clientX - initialX;
+                    const dy = touch.clientY - initialY;
+                    initialX = touch.clientX;
+                    initialY = touch.clientY;
                     
-                    xOffset = currentX;
-                    yOffset = currentY;
+                    // Obtener la posición actual
+                    let currentLeft = parseInt(activeElement.style.left) || 0;
+                    let currentTop = parseInt(activeElement.style.top) || 0;
                     
-                    // Limitar movimiento dentro del canvas
+                    // Actualizar posición
+                    let newLeft = currentLeft + dx;
+                    let newTop = currentTop + dy;
+                    
+                    // Limitar al canvas
                     const rect = canvas.getBoundingClientRect();
                     const imageRect = activeElement.getBoundingClientRect();
                     
-                    let left = e.touches[0].clientX - rect.left - (imageRect.width / 2);
-                    let top = e.touches[0].clientY - rect.top - (imageRect.height / 2);
+                    newLeft = Math.max(0, Math.min(newLeft, rect.width - imageRect.width));
+                    newTop = Math.max(0, Math.min(newTop, rect.height - imageRect.height));
                     
-                    // Asegurar que la imagen no salga del canvas
-                    left = Math.max(0, Math.min(left, rect.width - imageRect.width));
-                    top = Math.max(0, Math.min(top, rect.height - imageRect.height));
-                    
-                    activeElement.style.left = `${left}px`;
-                    activeElement.style.top = `${top}px`;
+                    activeElement.style.left = `${newLeft}px`;
+                    activeElement.style.top = `${newTop}px`;
                 }
             }
 
+            // Terminar arrastre con ratón
             function closeDragElement() {
                 document.removeEventListener('mousemove', elementDrag);
                 document.removeEventListener('mouseup', closeDragElement);
                 activeElement = null;
-                xOffset = 0;
-                yOffset = 0;
             }
 
+            // Terminar arrastre con toque
             function closeTouchDrag() {
                 document.removeEventListener('touchmove', touchMove);
                 document.removeEventListener('touchend', closeTouchDrag);
                 activeElement = null;
-                xOffset = 0;
-                yOffset = 0;
             }
 
+            // Resetear canvas
             function resetCanvas() {
                 const imagesToRemove = document.querySelectorAll('.draggable-image');
                 imagesToRemove.forEach(img => img.remove());
